@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────
+# prima-pool-client — worker agent + prima.cpp (single container)
+# ─────────────────────────────────────────────────────────────
+# Deployed by each PROVIDER on their own device, pointed at the
+# pool operator's server (PRIMA_POOL_URL). The operator does NOT
+# run this.
+#
+#   cp .env.example .env   # edit PRIMA_POOL_URL + PRIMA_POOL_API_KEY
+#   docker compose up -d
+#
+# The client agent and prima.cpp run in the SAME container, sharing
+# one network namespace — so the WireGuard tunnel the agent brings up
+# is directly visible to prima.cpp. No docker socket, no docker-in-docker.
+#
+# The agent manages a WireGuard interface, so it needs CAP_NET_ADMIN
+# and /dev/net/tun.
+# ─────────────────────────────────────────────────────────────
+name: prima-pool-client
+
+services:
+  client:
+    build:
+      context: .
+      args:
+        # CUDA=1 builds a GPU image. MODEL_URL is an OPTIONAL opt-in to bake a
+        # small model into the image; the default is to mount the model (below).
+        CUDA: ${CUDA:-0}
+        MODEL_URL: ${MODEL_URL:-}
+    image: prima-pool-client:local
+    container_name: prima-pool-client
+    restart: unless-stopped
+    environment:
+      # URL of the pool operator's control plane (NOT a compose service).
+      PRIMA_POOL_URL: ${PRIMA_POOL_URL:?PRIMA_POOL_URL is required}
+      PRIMA_POOL_API_KEY: ${PRIMA_POOL_API_KEY:?PRIMA_POOL_API_KEY is required}
+      PRIMA_POOL_MODEL: ${PRIMA_POOL_MODEL:-demo-model}
+      PRIMA_POOL_MEMORY_MB: ${PRIMA_POOL_MEMORY_MB:-4096}
+      PRIMA_POOL_WG_PRIVATE_KEY: ${PRIMA_POOL_WG_PRIVATE_KEY:-}
+      PRIMA_POOL_WG_LISTEN_PORT: ${PRIMA_POOL_WG_LISTEN_PORT:-51820}
+      PRIMA_POOL_WG_INTERFACE: ${PRIMA_POOL_WG_INTERFACE:-prima-pool}
+      PRIMA_POOL_WG_CONF_DIR: /etc/wireguard
+      # same-container: exec prima.cpp in this container (default).
+      PRIMA_POOL_PRIMA_MODE: ${PRIMA_POOL_PRIMA_MODE:-same-container}
+      # Absolute path to the GGUF model inside the container.
+      PRIMA_POOL_MODEL_PATH: ${PRIMA_POOL_MODEL_PATH:-/models/model.gguf}
+      PRIMA_POOL_MEM_LIMIT: ${PRIMA_POOL_MEM_LIMIT:-8g}
+      PRIMA_POOL_GPU_MEM_FLAG: ${PRIMA_POOL_GPU_MEM_FLAG:-}
+      PRIMA_POOL_CTX_SIZE: ${PRIMA_POOL_CTX_SIZE:-4096}
+      PRIMA_POOL_API_PORT: ${PRIMA_POOL_API_PORT:-8080}
+      PRIMA_POOL_BATCH_FLAGS: ${PRIMA_POOL_BATCH_FLAGS:-}
+      PRIMA_POOL_EXTRA_FLAGS: ${PRIMA_POOL_EXTRA_FLAGS:-}
+      PRIMA_POOL_STATE_PATH: /data/client-state.json
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - prima-pool-client-data:/data
+      # DEFAULT: mount the model from the host (keeps the image small — a
+      # 30-70B GGUF is 20-40+ GB and must not be baked into the image).
+      # Put the GGUF in ./models/ (or set PRIMA_POOL_MODEL_DIR).
+      - ${PRIMA_POOL_MODEL_DIR:-./models}:/models:ro
+
+volumes:
+  prima-pool-client-data:

@@ -68,3 +68,24 @@ def test_build_env_worker():
     assert env["RANK"] == "1"
     assert env["MODE"] == "llama-cli"
     assert env["COMPOSE_PROFILES"] == "cpu"
+
+
+def test_model_path_resolution_explicit():
+    from prima_pool_client.prima import PrimaLauncher
+
+    cfg = ClientConfig(model_path="/models/my-model.gguf")
+    launcher = PrimaLauncher(cfg)
+    assert launcher._resolve_model_path() == "/models/my-model.gguf"
+
+
+def test_model_path_resolution_default():
+    from prima_pool_client.prima import PrimaLauncher
+
+    cfg = ClientConfig(prima_dir="/prima", model_file="model.gguf", model_path="")
+    launcher = PrimaLauncher(cfg)
+    assert launcher._resolve_model_path() == "/prima/models/model.gguf"
+
+
+def test_same_container_default_mode():
+    cfg = ClientConfig()
+    assert cfg.prima_mode == "same-container"

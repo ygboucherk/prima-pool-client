@@ -98,8 +98,19 @@ class Agent:
         return f"{base}/v1/workers/{worker_id}/events"
 
     async def _ensure_registered(self) -> None:
+        # If we have a worker_id, verify it still exists server-side; if the
+        # server lost it (e.g. it was revoked while we were down), re-register.
         if self.state.worker_id:
-            return
+            try:
+                self.client.get_worker_state(self.state.worker_id)
+                return
+            except Exception:  # noqa: BLE001
+                logger.warning("worker %s no longer valid; re-registering", self.state.worker_id)
+                self.state.worker_id = None
+                self.state.cluster_id = None
+                self.state.assigned_ip = None
+                self.state.ring_position = None
+                self.state.status = "registered"
         # Generate WG keypair if not present
         if not self.state.wg_private_key:
             priv, pub = generate_keypair()
@@ -193,11 +204,16 @@ class Agent:
         except Exception as exc:  # noqa: BLE001
             logger.error("failed to fetch cluster config: %s", exc)
             return
+        # Determine ring position: prefer the persisted value, else derive it
+        # from the config (the peer whose allowed IP matches our assigned IP).
+        ring_position = self.state.ring_position
+        if ring_position is None:
+            ring_position = self._find_ring_position(config)
+            self.state.ring_position = ring_position
         # Render + bring up WireGuard
         conf = self._render_wg_conf(config)
         self.wg.up(conf)
         # Launch prima.cpp
-        ring_position = self.state.ring_position or 0
         self._prima_proc = self.prima.launch(config, ring_position)
         # Report readiness
         try:
@@ -205,6 +221,17 @@ class Agent:
             logger.info("readiness reported: %s (%d/%d)", status.status, status.members_ready, status.members_total)
         except Exception as exc:  # noqa: BLE001
             logger.error("readiness report failed: %s", exc)
+
+    def _find_ring_position(self, config: ClusterConfig) -> int:
+        """Find our index in the ring by matching our assigned IP to a peer."""
+        my_ip = self.state.assigned_ip
+        for i, peer in enumerate(config.peers):
+            for allowed in peer.allowed_ips:
+                if allowed.split("/")[0] == my_ip:
+                    return i
+        # Fallback: we are not in the peer list (shouldn't happen); default to 0.
+        logger.warning("could not find own IP %s in cluster peers; defaulting to head", my_ip)
+        return 0
 
     def _render_wg_conf(self, config: ClusterConfig) -> str:
         from .wireguard import render_wg_conf
@@ -247,11 +274,12 @@ class Agent:
         self._stop.set()
         if self._ws:
             self._ws.stop()
-        # Best-effort leave
-        if self.state.worker_id:
-            try:
-                self.client.revoke_worker(self.state.worker_id)
-            except Exception:  # noqa: BLE001
-                pass
+        # Tear down the tunnel and prima.cpp, but do NOT revoke the worker —
+        # revocation is a permanent delete. On restart the agent reconnects with
+        # the same worker_id (liveness is transient; the worker re-adds on the
+        # next heartbeat).
         self.wg.down()
+        if self._prima_proc:
+            self.prima.stop()
+            self._prima_proc = None
         self.client.close()

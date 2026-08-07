@@ -7,6 +7,7 @@ backoff and surfaces frames to the agent via an async callback.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Awaitable, Callable
 
@@ -39,13 +40,15 @@ class WsClient:
                     logger.info("WS connected: %s", self.url)
                     attempt = 0
                     async for raw in ws:
-                        import json
-
                         try:
                             frame = json.loads(raw)
                         except ValueError:
                             continue
-                        await self.on_frame(frame)
+                        try:
+                            await self.on_frame(frame)
+                        except Exception as exc:  # noqa: BLE001
+                            # A handler error must not kill the WS connection.
+                            logger.error("WS frame handler error: %s", exc)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("WS error: %s", exc)
             if self._stop.is_set():

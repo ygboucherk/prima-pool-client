@@ -1,9 +1,19 @@
 """prima.cpp launcher.
 
 Generates the equivalent of prima-docker's .env / docker-compose command from
-a cluster assignment, then launches prima.cpp either via docker compose or by
-executing the binaries directly. prima-docker is used as a behavioral blueprint
-only — this module reproduces its env-var semantics dynamically.
+a cluster assignment, then launches prima.cpp.
+
+Modes:
+  - "same-container" (default): exec llama-server/llama-cli directly in THIS
+    container. The client and prima.cpp share the same network namespace, so
+    the WireGuard interface the agent brings up is directly visible to
+    prima.cpp — this is the correct deployment for the single-container model.
+  - "docker": launch prima.cpp via `docker compose` against a mounted
+    prima-docker project (legacy; requires host networking to share the WG
+    namespace).
+
+prima-docker is used as a behavioral blueprint only — this module reproduces
+its env-var semantics dynamically.
 """
 from __future__ import annotations
 
@@ -68,6 +78,13 @@ def _ring_neighbors(cluster: ClusterConfig, ring_position: int) -> tuple[str, st
 class PrimaLauncher:
     def __init__(self, config: ClientConfig) -> None:
         self.config = config
+        self._proc: subprocess.Popen | None = None
+
+    def _resolve_model_path(self) -> str:
+        """Resolve the absolute GGUF path for the current mode."""
+        if self.config.model_path:
+            return self.config.model_path
+        return str(Path(self.config.prima_dir).expanduser() / "models" / self.config.model_file)
 
     def launch(self, cluster: ClusterConfig, ring_position: int) -> subprocess.Popen | None:
         world = len(cluster.peers)
@@ -76,7 +93,7 @@ class PrimaLauncher:
 
         if self.config.prima_mode == "docker":
             return self._launch_docker(env)
-        return self._launch_native(env, ring_position)
+        return self._launch_same_container(env, ring_position)
 
     def _launch_docker(self, env: dict[str, str]) -> subprocess.Popen | None:
         compose = shutil.which("docker")
@@ -90,14 +107,25 @@ class PrimaLauncher:
         logger.info("launching prima.cpp via docker compose in %s", project_dir)
         return subprocess.Popen(cmd, cwd=str(project_dir), env=full_env)
 
-    def _launch_native(self, env: dict[str, str], ring_position: int) -> subprocess.Popen | None:
+    def _launch_same_container(self, env: dict[str, str], ring_position: int) -> subprocess.Popen | None:
+        """Exec llama-server/llama-cli directly in this container.
+
+        Because the client and prima.cpp share the same network namespace, the
+        WG interface the agent brought up is directly reachable by prima.cpp.
+        """
         binary = shutil.which("llama-server" if ring_position == 0 else "llama-cli")
         if not binary:
-            raise RuntimeError("llama-server/llama-cli not found; cannot launch prima.cpp natively")
-        model_path = Path(self.config.prima_dir).expanduser() / "models" / self.config.model_file
+            raise RuntimeError(
+                "llama-server/llama-cli not found. In same-container mode prima.cpp "
+                "must be installed in this image."
+            )
+        model_path = self._resolve_model_path()
+        if not Path(model_path).exists():
+            raise RuntimeError(f"model file not found: {model_path}")
+
         cmd = [
             binary,
-            "-m", str(model_path),
+            "-m", model_path,
             "-c", str(self.config.ctx_size),
             "--world", env["WORLD"],
             "--rank", env["RANK"],
@@ -109,10 +137,13 @@ class PrimaLauncher:
             cmd += ["--host", "0.0.0.0", "--port", str(self.config.api_port)]
         if self.config.gpu_mem_flag:
             cmd += [self.config.gpu_mem_flag]
+        if self.config.batch_flags:
+            cmd += self.config.batch_flags.split()
         if self.config.extra_flags:
             cmd += self.config.extra_flags.split()
-        logger.info("launching prima.cpp natively: %s", " ".join(cmd))
-        return subprocess.Popen(cmd)
+        logger.info("launching prima.cpp in-container: %s", " ".join(cmd))
+        self._proc = subprocess.Popen(cmd)
+        return self._proc
 
     def stop(self) -> None:
         """Best-effort teardown of the prima.cpp process/container."""
@@ -125,5 +156,11 @@ class PrimaLauncher:
                 text=True,
             )
         else:
+            if self._proc and self._proc.poll() is None:
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
             subprocess.run(["pkill", "-f", "llama-server"], capture_output=True, text=True)
             subprocess.run(["pkill", "-f", "llama-cli"], capture_output=True, text=True)

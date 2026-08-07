@@ -41,9 +41,12 @@ class ClientConfig:
     wg_interface: str = "prima-pool"
     wg_conf_dir: str = "/etc/wireguard"
     # prima.cpp launch
-    prima_mode: str = "docker"  # "docker" (compose) or "native" (exec binaries)
+    prima_mode: str = "same-container"  # "same-container" (exec in this container) or "docker" (compose)
     prima_dir: str = "~/prima"  # for docker mode: compose project dir
     model_file: str = "model.gguf"
+    # Absolute path to the GGUF model inside the container (same-container mode).
+    # Defaults to <prima_dir>/models/<model_file>.
+    model_path: str = ""
     mem_limit: str = "8g"
     gpu_mem_flag: str = ""
     ctx_size: int = 4096
@@ -76,6 +79,7 @@ class ClientConfig:
         cfg.prima_mode = _env_str("PRIMA_POOL_PRIMA_MODE", cfg.prima_mode)
         cfg.prima_dir = _env_str("PRIMA_POOL_PRIMA_DIR", cfg.prima_dir)
         cfg.model_file = _env_str("PRIMA_POOL_MODEL_FILE", cfg.model_file)
+        cfg.model_path = _env_str("PRIMA_POOL_MODEL_PATH", cfg.model_path)
         cfg.mem_limit = _env_str("PRIMA_POOL_MEM_LIMIT", cfg.mem_limit)
         cfg.gpu_mem_flag = _env_str("PRIMA_POOL_GPU_MEM_FLAG", cfg.gpu_mem_flag)
         cfg.ctx_size = _env_int("PRIMA_POOL_CTX_SIZE", cfg.ctx_size)

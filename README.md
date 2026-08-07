@@ -21,7 +21,7 @@ generates them dynamically from the cluster assignment.
   reconnect/backoff; REST is the source of truth
 - **WireGuard** — generates a keypair locally (private key never leaves the
   device), renders `/etc/wireguard/prima-pool.conf`, brings the tunnel up
-- **prima.cpp** — launches the ring node (docker compose or native) with the
+- **prima.cpp** — launches the ring node in the **same container** with the
   correct RANK/WORLD/MASTER_IP/NEXT_IP from the cluster config
 - **Readiness** — reports `POST /clusters/{id}/ready` after WG + prima.cpp are up
 
@@ -42,16 +42,28 @@ prima-pool-client run
 
 ## Quick start (docker)
 
+The client and prima.cpp run in a **single container**, sharing one network
+namespace — so the WireGuard tunnel the agent brings up is directly visible to
+prima.cpp. No docker socket, no docker-in-docker.
+
+Deployed by each **provider** on their own device, pointed at the pool
+operator's server:
+
 ```bash
-# From the repo root (docker-compose.yml)
 cp .env.example .env
-# set PRIMA_POOL_API_KEY in .env
-docker compose up -d server client
+# set PRIMA_POOL_URL (operator's server) + PRIMA_POOL_API_KEY in .env
+docker compose up -d
 ```
 
-The client container needs `CAP_NET_ADMIN` and `/dev/net/tun` to manage the
-WireGuard interface, plus the docker socket to orchestrate prima.cpp. These are
-already configured in the root `docker-compose.yml`.
+The container needs `CAP_NET_ADMIN` and `/dev/net/tun` to manage the WireGuard
+interface — already configured in this repo's `docker-compose.yml`.
+
+**Model (default: mount)**: put the GGUF in `./models/` on the host (or set
+`PRIMA_POOL_MODEL_DIR`); it's mounted read-only into the container at `/models`.
+This keeps the image small — a 30-70B GGUF is 20-40+ GB and must not be baked
+into the image. For small models only, you can instead bake one in at build
+time via the `MODEL_URL` build arg. The model must be the same one the pool
+operator expects, and ideally identical across all cluster members.
 
 ## Configuration
 
@@ -68,10 +80,9 @@ via `--config`). See `src/prima_pool_client/config.py` for defaults.
 | `PRIMA_POOL_WG_LISTEN_PORT` | `51820` | WG listen port |
 | `PRIMA_POOL_WG_INTERFACE` | `prima-pool` | WG interface name |
 | `PRIMA_POOL_WG_CONF_DIR` | `/etc/wireguard` | Where the WG config is written |
-| `PRIMA_POOL_PRIMA_MODE` | `docker` | `docker` (compose) or `native` (exec binaries) |
-| `PRIMA_POOL_PRIMA_DIR` | `~/prima` | prima-docker project dir (docker mode) |
-| `PRIMA_POOL_MODEL_FILE` | `model.gguf` | GGUF filename |
-| `PRIMA_POOL_MEM_LIMIT` | `8g` | Docker memory limit for prima.cpp |
+| `PRIMA_POOL_PRIMA_MODE` | `same-container` | `same-container` (exec in this container) or `docker` (compose) |
+| `PRIMA_POOL_MODEL_PATH` | `/models/model.gguf` | Absolute GGUF path inside the container |
+| `PRIMA_POOL_MEM_LIMIT` | `8g` | Memory limit for prima.cpp (≥ model size + 2 GB) |
 | `PRIMA_POOL_GPU_MEM_FLAG` | — | e.g. `--gpu-mem 8` |
 | `PRIMA_POOL_CTX_SIZE` | `4096` | Context window |
 | `PRIMA_POOL_API_PORT` | `8080` | prima.cpp server port (head only) |
