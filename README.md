@@ -25,6 +25,11 @@ generates them dynamically from the cluster assignment.
   correct RANK/WORLD/MASTER_IP/NEXT_IP from the cluster config
 - **Readiness** — reports `POST /clusters/{id}/ready` after WG + prima.cpp are up
 
+> **Server peer:** when the pool server joins the cluster WG network (option A),
+> it appears in the cluster config as a peer with `role: "server"`. The client
+> excludes server peers from ring topology computation (`WORLD`/`NEXT_IP`), so
+> the prima.cpp ring is built from worker members only.
+
 ## Quick start (local)
 
 ```bash
