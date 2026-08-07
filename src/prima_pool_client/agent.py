@@ -223,9 +223,14 @@ class Agent:
             logger.error("readiness report failed: %s", exc)
 
     def _find_ring_position(self, config: ClusterConfig) -> int:
-        """Find our index in the ring by matching our assigned IP to a peer."""
+        """Find our index in the ring by matching our assigned IP to a peer.
+
+        Only ring members are considered (the server peer is excluded).
+        """
+        from .prima import _ring_members
+
         my_ip = self.state.assigned_ip
-        for i, peer in enumerate(config.peers):
+        for i, peer in enumerate(_ring_members(config)):
             for allowed in peer.allowed_ips:
                 if allowed.split("/")[0] == my_ip:
                     return i

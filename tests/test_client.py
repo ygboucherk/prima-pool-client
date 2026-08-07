@@ -51,6 +51,26 @@ def test_ring_neighbors_wraps():
     assert nxt == "10.23.1.1"  # wraps back to head
 
 
+def test_ring_neighbors_excludes_server_peer():
+    # A cluster with 2 ring members + 1 server peer (role="server").
+    cluster = ClusterConfig(
+        cluster_id="clu_1",
+        interface=InterfaceConfig(private_ip="10.23.1.2", subnet="10.23.1.0/24", mtu=1280),
+        peers=[
+            PeerConfig(pubkey="A", allowed_ips=["10.23.1.1/32"], preferred=Preferred.direct),
+            PeerConfig(pubkey="B", allowed_ips=["10.23.1.2/32"], preferred=Preferred.direct),
+            PeerConfig(pubkey="SRV", allowed_ips=["10.23.1.254/32"], preferred=Preferred.direct, role="server"),
+        ],
+    )
+    # Ring has 2 members; world must be 2, not 3.
+    from prima_pool_client.prima import _ring_members
+
+    assert len(_ring_members(cluster)) == 2
+    master, nxt = _ring_neighbors(cluster, 1)
+    assert master == "10.23.1.1"
+    assert nxt == "10.23.1.1"  # wraps to head (only 2 ring members)
+
+
 def test_build_env_head():
     cfg = ClientConfig(model_file="model.gguf", gpu_mem_flag="")
     cluster = _sample_cluster()

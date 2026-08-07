@@ -64,14 +64,23 @@ def build_env(
     return env
 
 
+def _ring_members(cluster: ClusterConfig) -> list:
+    """Return the ring members (excludes the control-plane server peer)."""
+    return [p for p in cluster.peers if p.role != "server"]
+
+
 def _ring_neighbors(cluster: ClusterConfig, ring_position: int) -> tuple[str, str]:
-    """Return (master_ip, next_ip) as WG private IPs from the ring order."""
-    peers = cluster.peers
-    n = len(peers)
-    # master = peers[0]'s allowed IP (the ring head)
-    master_ip = peers[0].allowed_ips[0].split("/")[0]
+    """Return (master_ip, next_ip) as WG private IPs from the ring order.
+
+    Only ring members participate in the prima.cpp ring; the server peer
+    (role="server") is excluded.
+    """
+    members = _ring_members(cluster)
+    n = len(members)
+    # master = members[0]'s allowed IP (the ring head)
+    master_ip = members[0].allowed_ips[0].split("/")[0]
     next_idx = (ring_position + 1) % n
-    next_ip = peers[next_idx].allowed_ips[0].split("/")[0]
+    next_ip = members[next_idx].allowed_ips[0].split("/")[0]
     return master_ip, next_ip
 
 
@@ -87,7 +96,7 @@ class PrimaLauncher:
         return str(Path(self.config.prima_dir).expanduser() / "models" / self.config.model_file)
 
     def launch(self, cluster: ClusterConfig, ring_position: int) -> subprocess.Popen | None:
-        world = len(cluster.peers)
+        world = len(_ring_members(cluster))
         master_ip, next_ip = _ring_neighbors(cluster, ring_position)
         env = build_env(self.config, cluster, ring_position, world, master_ip, next_ip)
 

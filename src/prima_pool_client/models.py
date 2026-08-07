@@ -64,6 +64,8 @@ class PeerConfig(BaseModel):
     allowed_ips: list[str]
     persistent_keepalive: int = 25
     preferred: Preferred = Preferred.direct
+    # "server" = the control plane (NOT a ring member); excluded from ring math.
+    role: str | None = None
 
 
 class ClusterConfig(BaseModel):
