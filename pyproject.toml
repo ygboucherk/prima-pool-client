@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────────────
+# prima-pool-client — worker agent for the prima-pool inference pool
+# ─────────────────────────────────────────────────────────────
+# A daemon that runs on each provider machine. It:
+#   • registers a worker with the control plane (worker-scoped key)
+#   • heartbeats and listens on the WebSocket push channel
+#   • on cluster assignment, brings up a WireGuard tunnel and joins
+#     the prima.cpp ring (using prima-docker as a behavioral blueprint)
+#   • reports readiness and handles cluster dissolution
+#
+# The prima-docker repo is used ONLY as a reference for how to launch
+# prima.cpp (env vars, ring topology, profiles). This client generates the
+# equivalent configuration dynamically from the cluster assignment.
+# ─────────────────────────────────────────────────────────────
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prima-pool-client"
+version = "0.1.0"
+description = "Worker agent client for the prima-pool inference pool"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "ygboucherk" }]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "httpx>=0.27",
+    "websockets>=13.0",
+    "pydantic>=2.7",
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+]
+
+[project.scripts]
+prima-pool-client = "prima_pool_client.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
