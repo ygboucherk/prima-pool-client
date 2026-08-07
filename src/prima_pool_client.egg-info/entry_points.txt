@@ -1,0 +1,2 @@
+[console_scripts]
+prima-pool-client = prima_pool_client.cli:main

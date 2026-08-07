@@ -71,9 +71,19 @@ class ClientConfig:
         cfg.model = _env_str("PRIMA_POOL_MODEL", cfg.model)
         cfg.memory_allocated_mb = _env_int("PRIMA_POOL_MEMORY_MB", cfg.memory_allocated_mb)
         cfg.wg_private_key = _env_str("PRIMA_POOL_WG_PRIVATE_KEY", cfg.wg_private_key)
+        cfg.wg_listen_port = _env_int("PRIMA_POOL_WG_LISTEN_PORT", cfg.wg_listen_port)
+        cfg.wg_interface = _env_str("PRIMA_POOL_WG_INTERFACE", cfg.wg_interface)
         cfg.prima_mode = _env_str("PRIMA_POOL_PRIMA_MODE", cfg.prima_mode)
+        cfg.prima_dir = _env_str("PRIMA_POOL_PRIMA_DIR", cfg.prima_dir)
         cfg.model_file = _env_str("PRIMA_POOL_MODEL_FILE", cfg.model_file)
         cfg.mem_limit = _env_str("PRIMA_POOL_MEM_LIMIT", cfg.mem_limit)
+        cfg.gpu_mem_flag = _env_str("PRIMA_POOL_GPU_MEM_FLAG", cfg.gpu_mem_flag)
+        cfg.ctx_size = _env_int("PRIMA_POOL_CTX_SIZE", cfg.ctx_size)
+        cfg.api_port = _env_int("PRIMA_POOL_API_PORT", cfg.api_port)
+        cfg.batch_flags = _env_str("PRIMA_POOL_BATCH_FLAGS", cfg.batch_flags)
+        cfg.extra_flags = _env_str("PRIMA_POOL_EXTRA_FLAGS", cfg.extra_flags)
+        cfg.wg_conf_dir = _env_str("PRIMA_POOL_WG_CONF_DIR", cfg.wg_conf_dir)
+        cfg.state_path = _env_str("PRIMA_POOL_STATE_PATH", cfg.state_path)
         return cfg
 
     @property

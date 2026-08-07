@@ -1,3 +1,27 @@
+Metadata-Version: 2.4
+Name: prima-pool-client
+Version: 0.1.0
+Summary: Worker agent client for the prima-pool inference pool
+Author: ygboucherk
+License: MIT
+Classifier: Development Status :: 2 - Pre-Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.13
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: httpx>=0.27
+Requires-Dist: websockets>=13.0
+Requires-Dist: pydantic>=2.7
+Requires-Dist: cryptography>=42.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Dynamic: license-file
+
 # prima-pool-client
 
 A **worker agent** for the prima-pool inference pool. It runs on each provider
