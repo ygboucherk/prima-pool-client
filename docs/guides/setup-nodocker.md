@@ -107,16 +107,33 @@ pip install -e ".[dev]"
 
 ---
 
-## Part 3 — Bootstrap an account + worker key
+## Part 3 — Create an account + worker key
+
+The agent authenticates with a **worker-scoped API key** (`sk-worker-...`)
+belonging to an account on the server. Creating both is a one-time step.
+
+### 3.1 Recommended: from the web UI
+
+The operator's dashboard (`<url>/ui`) can create keys for you:
+
+1. Open `https://pool.example.com/ui` and **register** an account (or log in).
+2. In the **API keys** section, enter a name (e.g. `device-1`), pick the
+   **worker** scope, and click **Create key**.
+3. Copy the `sk-worker-...` secret shown — it is displayed **once**.
+
+> ⚠️ The worker key is shown **once** — save it. If you lose it, create a new
+> one from the dashboard.
+
+### 3.2 Alternative: `bootstrap` CLI
+
+If you prefer the command line, run `bootstrap` — it registers the account and
+prints a worker key:
 
 ```bash
 prima-pool-client bootstrap --pool-url https://pool.example.com
 # prompts for username + password (creates the account if needed)
 # → prints account_id + worker key (sk-worker-...)
 ```
-
-> ⚠️ The worker key is shown **once** — save it. If you lose it, create a new
-> one from the server dashboard (`<url>/ui`) or bootstrap again.
 
 You can also pass `--username` / `--password` / `--name` non-interactively.
 

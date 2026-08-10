@@ -58,12 +58,29 @@ Without `/dev/net/tun` the agent starts but the tunnel can't come up.
 
 ---
 
-## Part 1 — One-time bootstrap (account + worker key)
+## Part 1 — Create an account + worker key
 
 The agent authenticates with a **worker-scoped API key** (`sk-worker-...`)
-belonging to an account on the server. Creating both is a one-time step —
-bootstrap needs the client package installed, but **not** on the provider
-device itself; run it once from any machine (your laptop):
+belonging to an account on the server. Creating both is a one-time step.
+
+### 1.1 Recommended: from the web UI
+
+The operator's dashboard (`<url>/ui`) can create keys for you — no local
+Python needed:
+
+1. Open `https://pool.example.com/ui` and **register** an account (or log in).
+2. In the **API keys** section, enter a name (e.g. `device-1`), pick the
+   **worker** scope, and click **Create key**.
+3. Copy the `sk-worker-...` secret shown — it is displayed **once**.
+
+> ⚠️ The worker key is shown **once** — save it. If you lose it, create a new
+> one from the dashboard.
+
+### 1.2 Alternative: `bootstrap` CLI
+
+If you prefer the command line (or the dashboard is unreachable), run
+`bootstrap` from any machine with the client installed — it registers the
+account and prints a worker key:
 
 ```bash
 git clone <client-repo-url> && cd prima-pool-client
@@ -75,12 +92,9 @@ prima-pool-client bootstrap --pool-url https://pool.example.com
 # → prints account_id + worker key (sk-worker-...)
 ```
 
-> ⚠️ The worker key is shown **once** — save it. If you lose it, create a new
-> one from the server dashboard (`<url>/ui`) or bootstrap again.
-
 You can also pass `--username` / `--password` / `--name` non-interactively.
 
-> Alternative, no local Python needed: build the image first (Part 2.1), then
+> No local Python at all? Build the image first (Part 2.1), then
 > `PRIMA_POOL_API_KEY=placeholder docker compose run --rm client \
 > prima-pool-client bootstrap --pool-url https://pool.example.com`
 > (compose requires `PRIMA_POOL_API_KEY` to be non-empty, hence the placeholder).
