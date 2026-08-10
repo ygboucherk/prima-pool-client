@@ -90,6 +90,8 @@ via `--config`). See `src/prima_pool_client/config.py` for defaults.
 | `PRIMA_POOL_WG_RELAY_CHECK_S` | `10` | Seconds between direct→relay fallback health checks (relay monitor) |
 | `PRIMA_POOL_WG_CONF_DIR` | `/etc/wireguard` | Where the WG config is written |
 | `PRIMA_POOL_PRIMA_MODE` | `same-container` | `same-container` (exec in this container) or `docker` (compose) |
+| `PRIMA_POOL_PRIMA_DIR` | `~/prima` | prima-docker project dir (docker mode only) |
+| `PRIMA_POOL_MODEL_FILE` | `model.gguf` | GGUF filename (used by `PRIMA_POOL_MODEL_PATH` fallback + docker mode) |
 | `PRIMA_POOL_MODEL_PATH` | `/models/model.gguf` | Absolute GGUF path inside the container |
 | `PRIMA_POOL_MEM_LIMIT` | `8g` | Memory limit for prima.cpp (≥ model size + 2 GB) |
 | `PRIMA_POOL_GPU_MEM_FLAG` | — | e.g. `--gpu-mem 8` |
