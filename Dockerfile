@@ -13,13 +13,18 @@
 #   MODEL_URL     optional URL to download a GGUF model at build time
 #   MODEL_PATH    where the model lives in the image (default /models/model.gguf)
 #
-# For CUDA builds:
+# The client package requires Python >= 3.13, so the default bases are
+# python:3.13-slim (Debian bookworm) which also ships the libs prima.cpp needs.
+#
+# For CUDA builds you must supply bases that have BOTH Python 3.13 AND the
+# CUDA runtime, e.g.:
 #   BUILDER_BASE=nvidia/cuda:12.6.0-devel-ubuntu22.04
 #   RUNTIME_BASE=nvidia/cuda:12.6.0-runtime-ubuntu22.04
+# (and install Python 3.13 in those stages — see the CUDA note below).
 # ─────────────────────────────────────────────────────────────
 ARG CUDA=0
-ARG BUILDER_BASE=ubuntu:22.04
-ARG RUNTIME_BASE=ubuntu:22.04
+ARG BUILDER_BASE=python:3.13-slim
+ARG RUNTIME_BASE=python:3.13-slim
 
 # ═══════════════════════════════════════════════════════════
 # Stage 1: Builder — compile prima.cpp + install the client
@@ -95,11 +100,12 @@ ENV PYTHONUNBUFFERED=1 \
     PRIMA_POOL_MODEL_PATH=/models/model.gguf
 
 # Runtime deps: prima.cpp libs + WireGuard tools (agent manages the tunnel).
+# Note: python:3.13-slim is Debian trixie, where libaio is libaio1t64.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libcurl4 \
         libgomp1 \
         libzmq5 \
-        libaio1 \
+        libaio1t64 \
         wireguard-tools \
         iproute2 \
         ca-certificates \
