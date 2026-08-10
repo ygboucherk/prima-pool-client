@@ -1,6 +1,7 @@
 """Unit tests for the client: WireGuard rendering, prima env building, keygen."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 
 from prima_pool_client.config import ClientConfig
@@ -119,3 +120,54 @@ def test_model_path_resolution_default():
 def test_same_container_default_mode():
     cfg = ClientConfig()
     assert cfg.prima_mode == "same-container"
+
+
+def test_heartbeat_loop_survives_timeout(tmp_path):
+    """The heartbeat loop must not crash when the wait_for timeout elapses.
+
+    Regression: an uncaught asyncio.TimeoutError from the pacing wait_for
+    killed the whole agent (and Docker restarted it in a loop).
+    """
+    from prima_pool_client.agent import Agent
+    from prima_pool_client.models import WorkerState, WorkerStatus
+
+    class FakeClient:
+        def __init__(self):
+            self.heartbeats = 0
+
+        def get_worker_state(self, worker_id):
+            return WorkerState(
+                worker_id=worker_id,
+                account_id="acc_test",
+                model="demo-model",
+                status=WorkerStatus.waitlisted,
+                online=True,
+                cluster=None,
+            )
+
+        def heartbeat(self, worker_id):
+            self.heartbeats += 1
+            return type("W", (), {"online": True, "status": type("S", (), {"value": "waitlisted"})})()
+
+    cfg = ClientConfig(
+        pool_url="http://127.0.0.1:8000",
+        api_key="sk-worker-test",
+        heartbeat_interval_s=0.01,
+        state_path=str(tmp_path / "state.json"),
+    )
+    # Pre-seed a worker_id so _ensure_registered short-circuits via
+    # get_worker_state (no model file / registration needed).
+    (tmp_path / "state.json").write_text('{"worker_id": "wrk_test"}')
+    agent = Agent(cfg, client=FakeClient())
+
+    async def scenario():
+        # Run the loop for a few heartbeat intervals, then stop it.
+        task = asyncio.create_task(agent.run())
+        await asyncio.sleep(0.05)
+        agent._stop.set()
+        await asyncio.wait_for(task, timeout=2)
+
+    asyncio.run(scenario())
+    # If the loop crashed on TimeoutError, the task would have raised and the
+    # test would fail above. Assert we actually paced through >1 heartbeat.
+    assert agent.client.heartbeats >= 2

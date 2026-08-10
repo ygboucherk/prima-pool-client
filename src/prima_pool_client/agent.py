@@ -89,7 +89,12 @@ class Agent:
         try:
             while not self._stop.is_set():
                 await self._heartbeat_once()
-                await asyncio.wait_for(self._stop.wait(), timeout=self.config.heartbeat_interval_s)
+                # wait_for raises TimeoutError when the heartbeat interval
+                # elapses — that's the normal pacing signal, not an error.
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=self.config.heartbeat_interval_s)
+                except asyncio.TimeoutError:
+                    pass
         finally:
             if ws_task:
                 self._ws.stop()
