@@ -227,8 +227,22 @@ class Agent:
         if config.relay.enabled and config.relay.pubkey and config.relay.endpoint:
             if self._relay_task is None or self._relay_task.done():
                 self._relay_task = asyncio.create_task(self._relay_monitor(config))
-        # Launch prima.cpp
-        self._prima_proc = self.prima.launch(config, ring_position)
+        # Launch prima.cpp. A launch failure (e.g. missing binary, model file)
+        # must NOT kill the agent or leave it stuck half-assigned: bring the
+        # tunnel back down and return to the waitlist so the scheduler can
+        # reassign us later.
+        try:
+            self._prima_proc = self.prima.launch(config, ring_position)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("prima.cpp launch failed: %s", exc)
+            self.wg.down()
+            self._cluster_config = None
+            self.state.cluster_id = None
+            self.state.assigned_ip = None
+            self.state.ring_position = None
+            self.state.status = "waitlisted"
+            self._save_state()
+            return
         # Report readiness
         try:
             status = self.client.report_ready(cluster_id)
