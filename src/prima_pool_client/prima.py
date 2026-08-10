@@ -17,6 +17,7 @@ its env-var semantics dynamically.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
@@ -27,6 +28,23 @@ from .config import ClientConfig
 from .models import ClusterConfig
 
 logger = logging.getLogger(__name__)
+
+
+def compute_gguf_sha256(path: str, chunk_size: int = 1 << 20) -> str:
+    """Compute the SHA-256 of a GGUF file in streaming chunks.
+
+    The hash is the authoritative identity of the model file (including
+    quantization): workers advertise it at registration so the server can
+    guarantee only identical GGUFs are grouped into a cluster.
+    """
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while True:
+            block = fh.read(chunk_size)
+            if not block:
+                break
+            h.update(block)
+    return h.hexdigest()
 
 
 def build_env(
@@ -76,6 +94,8 @@ def _ring_neighbors(cluster: ClusterConfig, ring_position: int) -> tuple[str, st
     (role="server") is excluded.
     """
     members = _ring_members(cluster)
+    if not members:
+        raise ValueError(f"cluster {cluster.cluster_id} has no ring members")
     n = len(members)
     # master = members[0]'s allowed IP (the ring head)
     master_ip = members[0].allowed_ips[0].split("/")[0]

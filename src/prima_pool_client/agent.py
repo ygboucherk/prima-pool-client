@@ -121,6 +121,7 @@ class Agent:
 
         payload = {
             "model": self.config.model,
+            "gguf_sha256": self._compute_gguf_hash(),
             "memory_allocated_mb": self.config.memory_allocated_mb,
             "wg_pubkey": self.state.wg_public_key,
             "endpoint": {
@@ -256,6 +257,18 @@ class Agent:
         self._save_state()
 
     # ── helpers ──────────────────────────────────────────────────────────
+    def _compute_gguf_hash(self) -> str:
+        """Compute the SHA-256 of the local GGUF file for registration."""
+        from .prima import compute_gguf_sha256
+
+        model_path = self.prima._resolve_model_path()
+        if not Path(model_path).exists():
+            raise RuntimeError(
+                f"model file not found at {model_path}; cannot compute GGUF hash"
+            )
+        logger.info("computing SHA-256 of %s", model_path)
+        return compute_gguf_sha256(model_path)
+
     def _detect_host(self) -> str:
         import socket
 

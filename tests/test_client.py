@@ -1,10 +1,20 @@
 """Unit tests for the client: WireGuard rendering, prima env building, keygen."""
 from __future__ import annotations
 
+import hashlib
+
 from prima_pool_client.config import ClientConfig
 from prima_pool_client.models import ClusterConfig, InterfaceConfig, PeerConfig, Preferred
-from prima_pool_client.prima import build_env, _ring_neighbors
+from prima_pool_client.prima import build_env, _ring_neighbors, compute_gguf_sha256
 from prima_pool_client.wireguard import derive_public_key, generate_keypair, render_wg_conf
+
+
+def test_compute_gguf_sha256(tmp_path):
+    p = tmp_path / "model.gguf"
+    data = b"GGUF fake model data" * 1000
+    p.write_bytes(data)
+    assert compute_gguf_sha256(str(p)) == hashlib.sha256(data).hexdigest()
+    assert len(compute_gguf_sha256(str(p))) == 64
 
 
 def _sample_cluster() -> ClusterConfig:

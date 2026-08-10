@@ -15,7 +15,9 @@ generates them dynamically from the cluster assignment.
 ## What it does
 
 - **Bootstrap** — register an account and create a worker-scoped API key
-- **Register** — declares a model + self-declared memory + WireGuard pubkey
+- **Register** — declares a model + self-declared memory + WireGuard pubkey +
+  the **SHA-256 of the local GGUF**; the server only groups workers with the
+  same GGUF hash, so a mismatched model/quantization is rejected at registration
 - **Heartbeat** — keeps the worker online (default every 10 s)
 - **WebSocket** — listens for `cluster_assigned` / `cluster_dissolved` with
   reconnect/backoff; REST is the source of truth
