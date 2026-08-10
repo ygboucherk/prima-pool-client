@@ -50,6 +50,8 @@ class Agent:
         self._stop = asyncio.Event()
         self._ws: WsClient | None = None
         self._prima_proc = None
+        self._relay_task: asyncio.Task | None = None
+        self._cluster_config: ClusterConfig | None = None
 
     # ── persistence ──────────────────────────────────────────────────────
     def _load_state(self) -> AgentState:
@@ -125,7 +127,7 @@ class Agent:
             "memory_allocated_mb": self.config.memory_allocated_mb,
             "wg_pubkey": self.state.wg_public_key,
             "endpoint": {
-                "host": self._detect_host(),
+                "host": self.config.wg_endpoint_host or self._detect_host(),
                 "port": self.config.wg_listen_port,
                 "behind_nat": False,
                 "nat_type": "unknown",
@@ -214,6 +216,12 @@ class Agent:
         # Render + bring up WireGuard
         conf = self._render_wg_conf(config)
         self.wg.up(conf)
+        # Remember the config so the relay monitor can route unreachable peers.
+        self._cluster_config = config
+        # Start the direct→relay fallback monitor (if a relay is configured).
+        if config.relay.enabled and config.relay.pubkey and config.relay.endpoint:
+            if self._relay_task is None or self._relay_task.done():
+                self._relay_task = asyncio.create_task(self._relay_monitor(config))
         # Launch prima.cpp
         self._prima_proc = self.prima.launch(config, ring_position)
         # Report readiness
@@ -244,8 +252,65 @@ class Agent:
 
         return render_wg_conf(config, self.state.wg_private_key, self.config.wg_listen_port)
 
+    async def _relay_monitor(self, config: ClusterConfig) -> None:
+        """Direct-first, relay-fallback.
+
+        Polls `wg show ... latest-handshakes`; for ring peers that have no
+        recent direct handshake (or are marked `preferred: relay`), ensure the
+        relay routes their IP. Peers whose direct path recovers are removed
+        from the relay route (WG will re-route direct).
+        """
+        relay = config.relay
+        relayed_ips: set[str] = set()
+        check_interval = max(5.0, float(getattr(self.config, "wg_relay_check_s", 10)))
+        direct_stale_s = 120.0
+        while not self._stop.is_set():
+            try:
+                if not self.wg.is_up():
+                    break
+                now = time.time()
+                handshakes = self.wg.latest_handshakes()
+                stale_epoch = int(now - direct_stale_s)
+
+                wanted: set[str] = set()
+                for peer in config.peers:
+                    if peer.role == "server":
+                        continue
+                    if not peer.allowed_ips:
+                        continue
+                    peer_ip = peer.allowed_ips[0].split("/")[0]
+                    direct_ok = handshakes.get(peer.pubkey, 0) > stale_epoch
+                    prefer_relay = peer.preferred.value == "relay"
+                    if prefer_relay or not direct_ok:
+                        wanted.add(peer_ip)
+
+                if wanted != relayed_ips:
+                    if wanted:
+                        self.wg.add_peer(
+                            relay.pubkey,
+                            relay.endpoint,
+                            sorted(wanted),
+                            keepalive=25,
+                        )
+                        logger.info("routing %d peer(s) via relay: %s", len(wanted), sorted(wanted))
+                    else:
+                        # All direct — remove the relay route entirely.
+                        self.wg.remove_peer(relay.pubkey)
+                        logger.info("all peers direct; removed relay route")
+                    relayed_ips = wanted
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("relay monitor error: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=check_interval)
+            except asyncio.TimeoutError:
+                pass
+
     async def _handle_dissolved(self, frame: dict) -> None:
         logger.info("cluster %s dissolved (%s)", frame.get("cluster_id"), frame.get("reason"))
+        if self._relay_task:
+            self._relay_task.cancel()
+            self._relay_task = None
+        self._cluster_config = None
         self.wg.down()
         if self._prima_proc:
             self.prima.stop()
@@ -292,6 +357,9 @@ class Agent:
         self._stop.set()
         if self._ws:
             self._ws.stop()
+        if self._relay_task:
+            self._relay_task.cancel()
+            self._relay_task = None
         # Tear down the tunnel and prima.cpp, but do NOT revoke the worker —
         # revocation is a permanent delete. On restart the agent reconnects with
         # the same worker_id (liveness is transient; the worker re-adds on the

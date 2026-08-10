@@ -40,6 +40,12 @@ class ClientConfig:
     wg_listen_port: int = 51820
     wg_interface: str = "prima-pool"
     wg_conf_dir: str = "/etc/wireguard"
+    # Explicit WG endpoint host advertised at registration (public IP, Tailscale
+    # IP, or a hostname). If empty, the client sends its detected host; the
+    # server falls back to the observed source IP when that is unusable.
+    wg_endpoint_host: str = ""
+    # Seconds between direct→relay fallback health checks (relay monitor).
+    wg_relay_check_s: int = 10
     # prima.cpp launch
     prima_mode: str = "same-container"  # "same-container" (exec in this container) or "docker" (compose)
     prima_dir: str = "~/prima"  # for docker mode: compose project dir
@@ -76,6 +82,8 @@ class ClientConfig:
         cfg.wg_private_key = _env_str("PRIMA_POOL_WG_PRIVATE_KEY", cfg.wg_private_key)
         cfg.wg_listen_port = _env_int("PRIMA_POOL_WG_LISTEN_PORT", cfg.wg_listen_port)
         cfg.wg_interface = _env_str("PRIMA_POOL_WG_INTERFACE", cfg.wg_interface)
+        cfg.wg_endpoint_host = _env_str("PRIMA_POOL_WG_ENDPOINT_HOST", cfg.wg_endpoint_host)
+        cfg.wg_relay_check_s = _env_int("PRIMA_POOL_WG_RELAY_CHECK_S", cfg.wg_relay_check_s)
         cfg.prima_mode = _env_str("PRIMA_POOL_PRIMA_MODE", cfg.prima_mode)
         cfg.prima_dir = _env_str("PRIMA_POOL_PRIMA_DIR", cfg.prima_dir)
         cfg.model_file = _env_str("PRIMA_POOL_MODEL_FILE", cfg.model_file)

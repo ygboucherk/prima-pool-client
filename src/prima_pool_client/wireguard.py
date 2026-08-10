@@ -75,7 +75,9 @@ def render_wg_conf(config: ClusterConfig, private_key: str, listen_port: int) ->
         lines.append(f"PublicKey = {config.relay.pubkey}")
         if config.relay.endpoint:
             lines.append(f"Endpoint = {config.relay.endpoint}")
-        lines.append(f"AllowedIPs = {', '.join(p.allowed_ips for p in config.peers)}")
+        # The relay routes ALL member IPs (flatten each peer's allowed_ips).
+        relay_allowed = [ip for p in config.peers for ip in p.allowed_ips]
+        lines.append(f"AllowedIPs = {', '.join(relay_allowed)}")
         lines.append(f"PersistentKeepalive = {config.relay.persistent_keepalive if hasattr(config.relay, 'persistent_keepalive') else 25}")
         lines.append("")
 
@@ -133,3 +135,65 @@ class WireGuardManager:
             text=True,
         )
         return result.returncode == 0
+
+    def latest_handshakes(self) -> dict[str, int]:
+        """Return {peer_pubkey: last_handshake_epoch} via `wg show`.
+
+        A value of 0 means the peer has never completed a handshake.
+        """
+        if not self._wg or not self.is_up():
+            return {}
+        result = subprocess.run(
+            [self._wg, "show", self.config.wg_interface, "latest-handshakes"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return {}
+        handshakes: dict[str, int] = {}
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                pubkey, epoch = parts[0], parts[1]
+                try:
+                    handshakes[pubkey] = int(epoch)
+                except ValueError:
+                    continue
+        return handshakes
+
+    def add_peer(self, pubkey: str, endpoint: str, allowed_ips: list[str], keepalive: int = 25) -> None:
+        """Add or update a peer on the live interface (no restart)."""
+        if not self._wg:
+            raise RuntimeError("wg not found; cannot add peer")
+        ips = ", ".join(allowed_ips)
+        subprocess.run(
+            [
+                self._wg,
+                "set",
+                self.config.wg_interface,
+                "peer",
+                pubkey,
+                "endpoint",
+                endpoint,
+                "allowed-ips",
+                ips,
+                "persistent-keepalive",
+                str(keepalive),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        logger.info("added/updated WG peer %s endpoint=%s allowed=%s", pubkey, endpoint, ips)
+
+    def remove_peer(self, pubkey: str) -> None:
+        """Remove a peer from the live interface (no restart)."""
+        if not self._wg:
+            return
+        subprocess.run(
+            [self._wg, "set", self.config.wg_interface, "peer", pubkey, "remove"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        logger.info("removed WG peer %s", pubkey)
