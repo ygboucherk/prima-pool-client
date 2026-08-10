@@ -12,6 +12,11 @@ It uses `prima-docker` **only as a behavioral blueprint** — it reproduces the
 same env-var semantics (RANK/WORLD/MASTER_IP/NEXT_IP, profiles, MEM_LIMIT) but
 generates them dynamically from the cluster assignment.
 
+> **First time?** Follow the
+> [Docker setup guide](docs/guides/setup-docker.md) (recommended) or the
+> [no-Docker guide](docs/guides/setup-nodocker.md) (bare-metal agent) —
+> bootstrap, config, model, and start are covered step by step.
+
 ## What it does
 
 - **Bootstrap** — register an account and create a worker-scoped API key
