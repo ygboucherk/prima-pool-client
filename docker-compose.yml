@@ -29,6 +29,14 @@ services:
     image: prima-pool-client:local
     container_name: prima-pool-client
     restart: unless-stopped
+    # Docker memory limit — REQUIRED by Halda for device profiling inside
+    # a container. prima.cpp detects Docker and reads memory from cgroups,
+    # not /proc/meminfo. Without a limit, cgroup values are empty and Halda
+    # crashes with:
+    #   GGML_ASSERT(dev_info->memory.total_physical > 0 && ...) failed
+    # (See prima-docker/README.md → "Known issues and fixes".)
+    # ⚠️ Must be >= model size + 2 GB, or the container is OOM-killed (exit 137).
+    mem_limit: ${PRIMA_POOL_MEM_LIMIT:-8g}
     environment:
       # URL of the pool operator's control plane (NOT a compose service).
       PRIMA_POOL_URL: ${PRIMA_POOL_URL:?PRIMA_POOL_URL is required}
