@@ -101,11 +101,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Runtime deps: prima.cpp libs + WireGuard tools (agent manages the tunnel).
 # Note: python:3.13-slim is Debian trixie, where libaio is libaio1t64.
+# fio is required by Halda's device profiler (external_fio_impl in
+# common/profiler.cpp). Without it, profiling fails with:
+#   Engine posixaio and sync not loadable, fio test failed
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libcurl4 \
         libgomp1 \
         libzmq5 \
         libaio1t64 \
+        fio \
         wireguard-tools \
         iproute2 \
         ca-certificates \
