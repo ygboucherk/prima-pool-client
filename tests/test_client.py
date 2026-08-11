@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 
 from prima_pool_client.config import ClientConfig
 from prima_pool_client.models import ClusterConfig, InterfaceConfig, PeerConfig, Preferred
@@ -171,3 +172,68 @@ def test_heartbeat_loop_survives_timeout(tmp_path):
     # If the loop crashed on TimeoutError, the task would have raised and the
     # test would fail above. Assert we actually paced through >1 heartbeat.
     assert agent.client.heartbeats >= 2
+
+
+def test_endpoint_change_triggers_reregistration(tmp_path, monkeypatch):
+    """If the configured WG endpoint host changed since the last registration,
+    the agent must re-register on startup so the server learns the new endpoint
+    (a worker that moves hardware / sets PRIMA_POOL_WG_ENDPOINT_HOST would
+    otherwise stay unreachable at its stale endpoint forever)."""
+    from prima_pool_client.agent import Agent
+    from prima_pool_client.wireguard import generate_keypair
+
+    # No real GGUF file in tests — stub the hash.
+    monkeypatch.setattr(Agent, "_compute_gguf_hash", lambda self: "a" * 64)
+
+    priv, pub = generate_keypair()
+    registrations = []
+
+    class FakeClient:
+        def get_worker_state(self, worker_id):
+            return type("S", (), {"status": type("ST", (), {"value": "waitlisted"}), "online": True, "cluster": None})()
+
+        def register_worker(self, payload):
+            registrations.append(payload)
+            return type(
+                "W",
+                (),
+                {
+                    "worker_id": "wrk_new",
+                    "account_id": "acc_test",
+                    "status": type("ST", (), {"value": "waitlisted"}),
+                    "online": False,
+                    "model": payload["model"],
+                },
+            )()
+
+    cfg = ClientConfig(
+        pool_url="http://127.0.0.1:8000",
+        api_key="sk-worker-test",
+        wg_endpoint_host="203.0.113.99",  # NEW endpoint
+        state_path=str(tmp_path / "state.json"),
+    )
+    # Simulate a previous registration that advertised a DIFFERENT endpoint.
+    (tmp_path / "state.json").write_text(
+        json.dumps(
+            {
+                "worker_id": "wrk_old",
+                "wg_private_key": priv,
+                "wg_public_key": pub,
+                "endpoint_host": "172.18.0.1",  # stale, from before the move
+            }
+        )
+    )
+    agent = Agent(cfg, client=FakeClient())
+
+    async def scenario():
+        await agent._ensure_registered()
+
+    asyncio.run(scenario())
+
+    # Re-registered (new worker), and advertised the NEW endpoint.
+    assert agent.state.worker_id == "wrk_new"
+    assert len(registrations) == 1
+    assert registrations[0]["endpoint"]["host"] == "203.0.113.99"
+    # The WG keypair is PRESERVED across the re-registration (same device).
+    assert agent.state.wg_private_key == priv
+    assert agent.state.endpoint_host == "203.0.113.99"

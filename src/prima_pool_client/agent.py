@@ -37,6 +37,11 @@ class AgentState:
     config_url: str | None = None
     wg_private_key: str = ""
     wg_public_key: str = ""
+    # WG endpoint host advertised at the last registration. Persisted so the
+    # agent re-registers when the configured endpoint changes (e.g. a worker
+    # moves networks or sets PRIMA_POOL_WG_ENDPOINT_HOST) — otherwise the
+    # server would keep serving the stale endpoint forever.
+    endpoint_host: str = ""
     updated_at: float = field(default_factory=time.time)
 
 
@@ -104,20 +109,45 @@ class Agent:
         base = self.config.pool_url.replace("http://", "ws://").replace("https://", "wss://")
         return f"{base}/v1/workers/{worker_id}/events"
 
+    def _advertised_endpoint_host(self) -> str:
+        """The WG endpoint host this worker should advertise at registration."""
+        return self.config.wg_endpoint_host or self._detect_host()
+
     async def _ensure_registered(self) -> None:
-        # If we have a worker_id, verify it still exists server-side; if the
-        # server lost it (e.g. it was revoked while we were down), re-register.
+        # If we have a worker_id, verify it still exists server-side; re-register
+        # if the server lost it (revoked while down) OR if our configured WG
+        # endpoint changed since the last registration (the server must learn
+        # the new endpoint for peers to reach us).
         if self.state.worker_id:
-            try:
-                self.client.get_worker_state(self.state.worker_id)
-                return
-            except Exception:  # noqa: BLE001
-                logger.warning("worker %s no longer valid; re-registering", self.state.worker_id)
+            endpoint_changed = self.state.endpoint_host and self.state.endpoint_host != self._advertised_endpoint_host()
+            if endpoint_changed:
+                # The server only learns a new endpoint at registration, so a
+                # moved / reconfigured worker must re-register. Keep the same
+                # WG keypair (the device identity is unchanged); the new worker
+                # record will re-advertise the current endpoint.
+                logger.info(
+                    "WG endpoint changed %r -> %r; re-registering",
+                    self.state.endpoint_host,
+                    self._advertised_endpoint_host(),
+                )
                 self.state.worker_id = None
                 self.state.cluster_id = None
                 self.state.assigned_ip = None
                 self.state.ring_position = None
                 self.state.status = "registered"
+                self.state.endpoint_host = ""
+            else:
+                try:
+                    self.client.get_worker_state(self.state.worker_id)
+                    return
+                except Exception:  # noqa: BLE001
+                    logger.warning("worker %s no longer valid; re-registering", self.state.worker_id)
+                    self.state.worker_id = None
+                    self.state.cluster_id = None
+                    self.state.assigned_ip = None
+                    self.state.ring_position = None
+                    self.state.status = "registered"
+                    self.state.endpoint_host = ""
         # Generate WG keypair if not present
         if not self.state.wg_private_key:
             priv, pub = generate_keypair()
@@ -132,7 +162,7 @@ class Agent:
             "memory_allocated_mb": self.config.memory_allocated_mb,
             "wg_pubkey": self.state.wg_public_key,
             "endpoint": {
-                "host": self.config.wg_endpoint_host or self._detect_host(),
+                "host": self._advertised_endpoint_host(),
                 "port": self.config.wg_listen_port,
                 "behind_nat": False,
                 "nat_type": "unknown",
@@ -145,6 +175,8 @@ class Agent:
         self.state.status = worker.status.value
         self.state.online = worker.online
         self.state.model = worker.model
+        # Remember what endpoint we advertised so a change triggers re-register.
+        self.state.endpoint_host = self._advertised_endpoint_host()
         self._save_state()
         logger.info("registered worker %s (status=%s)", worker.worker_id, worker.status)
 
