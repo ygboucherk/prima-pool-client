@@ -153,12 +153,13 @@ def test_heartbeat_loop_survives_timeout(tmp_path):
     cfg = ClientConfig(
         pool_url="http://127.0.0.1:8000",
         api_key="sk-worker-test",
+        wg_endpoint_host="203.0.113.99",
         heartbeat_interval_s=0.01,
         state_path=str(tmp_path / "state.json"),
     )
-    # Pre-seed a worker_id so _ensure_registered short-circuits via
-    # get_worker_state (no model file / registration needed).
-    (tmp_path / "state.json").write_text('{"worker_id": "wrk_test"}')
+    # Pre-seed a worker_id + MATCHING endpoint_host so _ensure_registered
+    # short-circuits via get_worker_state (no model file / registration needed).
+    (tmp_path / "state.json").write_text('{"worker_id": "wrk_test", "endpoint_host": "203.0.113.99"}')
     agent = Agent(cfg, client=FakeClient())
 
     async def scenario():
@@ -236,4 +237,53 @@ def test_endpoint_change_triggers_reregistration(tmp_path, monkeypatch):
     assert registrations[0]["endpoint"]["host"] == "203.0.113.99"
     # The WG keypair is PRESERVED across the re-registration (same device).
     assert agent.state.wg_private_key == priv
+    assert agent.state.endpoint_host == "203.0.113.99"
+
+
+def test_upgrade_from_old_state_rereregisters(tmp_path, monkeypatch):
+    """A state file written BEFORE the endpoint_host field existed (upgrade
+    path) must trigger a re-registration — an empty persisted endpoint_host
+    must NOT short-circuit the check (that was a bug: `"" and ...` is falsy,
+    so upgraded workers never re-advertised their endpoint)."""
+    from prima_pool_client.agent import Agent
+
+    monkeypatch.setattr(Agent, "_compute_gguf_hash", lambda self: "a" * 64)
+    registrations = []
+
+    class FakeClient:
+        def get_worker_state(self, worker_id):
+            return type("S", (), {"status": type("ST", (), {"value": "waitlisted"}), "online": True, "cluster": None})()
+
+        def register_worker(self, payload):
+            registrations.append(payload)
+            return type(
+                "W",
+                (),
+                {
+                    "worker_id": "wrk_new",
+                    "account_id": "acc_test",
+                    "status": type("ST", (), {"value": "waitlisted"}),
+                    "online": False,
+                    "model": payload["model"],
+                },
+            )()
+
+    cfg = ClientConfig(
+        pool_url="http://127.0.0.1:8000",
+        api_key="sk-worker-test",
+        wg_endpoint_host="203.0.113.99",
+        state_path=str(tmp_path / "state.json"),
+    )
+    # Old-state shape: NO endpoint_host key at all (AgentState default "").
+    (tmp_path / "state.json").write_text(json.dumps({"worker_id": "wrk_old"}))
+    agent = Agent(cfg, client=FakeClient())
+
+    async def scenario():
+        await agent._ensure_registered()
+
+    asyncio.run(scenario())
+
+    assert agent.state.worker_id == "wrk_new"
+    assert len(registrations) == 1
+    assert registrations[0]["endpoint"]["host"] == "203.0.113.99"
     assert agent.state.endpoint_host == "203.0.113.99"

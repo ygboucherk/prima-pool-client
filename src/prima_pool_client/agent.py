@@ -119,7 +119,11 @@ class Agent:
         # endpoint changed since the last registration (the server must learn
         # the new endpoint for peers to reach us).
         if self.state.worker_id:
-            endpoint_changed = self.state.endpoint_host and self.state.endpoint_host != self._advertised_endpoint_host()
+            advertised = self._advertised_endpoint_host()
+            # An empty persisted endpoint_host (e.g. a state file written before
+            # this field existed) must NOT block the comparison — treat it as a
+            # mismatch so the worker re-registers once and stamps its endpoint.
+            endpoint_changed = self.state.endpoint_host != advertised
             if endpoint_changed:
                 # The server only learns a new endpoint at registration, so a
                 # moved / reconfigured worker must re-register. Keep the same
@@ -128,7 +132,7 @@ class Agent:
                 logger.info(
                     "WG endpoint changed %r -> %r; re-registering",
                     self.state.endpoint_host,
-                    self._advertised_endpoint_host(),
+                    advertised,
                 )
                 self.state.worker_id = None
                 self.state.cluster_id = None
