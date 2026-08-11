@@ -16,6 +16,11 @@ generates them dynamically from the cluster assignment.
 > [Docker setup guide](docs/guides/setup-docker.md) (recommended) or the
 > [no-Docker guide](docs/guides/setup-nodocker.md) (bare-metal agent) —
 > bootstrap, config, model, and start are covered step by step.
+>
+> **Seen it working before?** A real two-machine (pool VPS + NAT'd laptop)
+> CPU-only deployment with specs, memory limits, and measured performance is
+> documented in
+> [Tested two-machine CPU cluster](docs/tests/two-machine-cpu-cluster.md).
 
 ## What it does
 
