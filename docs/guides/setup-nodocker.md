@@ -201,6 +201,7 @@ The agent creates a host interface named `PRIMA_POOL_WG_INTERFACE` (default
 # leaves the device; stored in the state file)
 PRIMA_POOL_WG_PRIVATE_KEY=
 PRIMA_POOL_WG_LISTEN_PORT=51820
+# Keep this ≤15 chars (Linux IFNAMSIZ limit) or wg-quick up will fail.
 PRIMA_POOL_WG_INTERFACE=prima-pool
 ```
 

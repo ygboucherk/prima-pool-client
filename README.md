@@ -90,7 +90,7 @@ via `--config`). See `src/prima_pool_client/config.py` for defaults.
 | `PRIMA_POOL_MEMORY_MB` | `4096` | Self-declared memory to allocate |
 | `PRIMA_POOL_WG_PRIVATE_KEY` | auto | WireGuard private key (auto-generated if empty) |
 | `PRIMA_POOL_WG_LISTEN_PORT` | `51820` | WG listen port |
-| `PRIMA_POOL_WG_INTERFACE` | `prima-pool` | WG interface name |
+| `PRIMA_POOL_WG_INTERFACE` | `prima-pool` | WG interface name (⚠️ max 15 chars — Linux `IFNAMSIZ` limit) |
 | `PRIMA_POOL_WG_ENDPOINT_HOST` | auto | Explicit WG endpoint host (public IP / Tailscale IP / hostname). Empty = server uses the IP it observes on the registration connection |
 | `PRIMA_POOL_WG_RELAY_CHECK_S` | `10` | Seconds between direct→relay fallback health checks (relay monitor) |
 | `PRIMA_POOL_WG_CONF_DIR` | `/etc/wireguard` | Where the WG config is written |
