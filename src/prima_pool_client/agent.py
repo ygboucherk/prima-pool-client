@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import ClientConfig
-from .models import ClusterConfig, WorkerState, WorkerStatus
+from .models import ClusterConfig, WorkerState
 from .prima import PrimaLauncher
 from .rest import PoolClient
 from .wireguard import WireGuardManager, derive_public_key, generate_keypair
