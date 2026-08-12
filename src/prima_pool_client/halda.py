@@ -102,18 +102,25 @@ def parse_window_size(stdout: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def build_distribution(stdout: str) -> dict[str, int] | None:
+def build_distribution(stdout: str, world: int) -> dict[str, int] | None:
     """Return the rank-keyed layer distribution for reporting.
 
     - world > 1, Halda table present -> {rank: window} (pruned ranks -> 0).
     - world == 1 (no table) -> {"0": total_layers} (head does all the work),
       using the "Using window size" line for the total.
-    - Nothing could be parsed -> None (caller sends an explicit "unknown",
-      so the cluster can still go live with the field recorded as unknown).
+    - Nothing could be parsed (or world > 1 with a failed parse) -> None
+      (caller sends an explicit "unknown", so the cluster can still go live
+      with the field recorded as unknown).
+
+    IMPORTANT: the world==1 fallback must ONLY apply when world == 1. On a
+    multi-worker cluster whose Halda table failed to parse, reporting
+    {"0": total} would wrongly attribute ALL layers to the head.
     """
     dist = parse_distribution(stdout)
     if dist is not None:
         return dist
+    if world != 1:
+        return None
     total = parse_window_size(stdout)
     if total is not None and total > 0:
         return {"0": total}

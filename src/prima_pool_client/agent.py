@@ -311,6 +311,7 @@ class Agent:
         recorded as unknown (liveness must never be blocked by a log parse).
         """
         from .halda import build_distribution
+        from .prima import _ring_members
 
         # In docker mode there is no stdout capture, so we cannot wait for the
         # "model loaded" marker or parse Halda. Report ready immediately with
@@ -339,7 +340,8 @@ class Agent:
                 pass
 
         stdout = self.prima.captured_stdout()
-        distribution = build_distribution(stdout)
+        world = len(_ring_members(config))
+        distribution = build_distribution(stdout, world)
         if distribution is None:
             # Explicit unknown (empty dict) so the cluster can still go live.
             logger.warning(

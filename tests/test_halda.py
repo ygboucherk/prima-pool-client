@@ -66,12 +66,21 @@ def test_parse_window_size():
 def test_build_distribution_world1_head_does_all():
     """world == 1: no Halda table; head handles all layers."""
     stdout = "Using window size: 72, GPU layers: 0\n"
-    assert build_distribution(stdout) == {"0": 72}
+    assert build_distribution(stdout, world=1) == {"0": 72}
 
 
 def test_build_distribution_world_multi():
-    assert build_distribution(ALLOC_TABLE) == {"0": 35, "1": 24, "2": 13}
+    assert build_distribution(ALLOC_TABLE, world=3) == {"0": 35, "1": 24, "2": 13}
+
+
+def test_build_distribution_world_multi_parse_failure_is_unknown():
+    """world > 1 with a FAILED Halda parse must NOT fall back to 'head does
+    all the work' — that would misattribute all layers to the head."""
+    stdout = "Using window size: 72, GPU layers: 0\n"  # window line present, no table
+    assert build_distribution(stdout, world=3) is None
+    assert build_distribution("garbage output", world=3) is None
 
 
 def test_build_distribution_unknown_returns_none():
-    assert build_distribution("garbage output") is None
+    assert build_distribution("garbage output", world=1) is None
+    assert build_distribution("garbage output", world=3) is None
