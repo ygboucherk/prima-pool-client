@@ -64,10 +64,17 @@ def parse_distribution(stdout: str) -> dict[str, int] | None:
     table_start = matches[-1].start()
     table = stdout[table_start:]
 
+    # Parse each device block: a "Device Index : N" line followed by its
+    # "N Layer Window : M" line. We scope the window search to the block
+    # (up to the next Device Index) so a malformed block can't steal the
+    # next device's window.
     windows: dict[str, int] = {}
-    for m in _DEVICE_INDEX.finditer(table):
+    idx_matches = list(_DEVICE_INDEX.finditer(table))
+    for i, m in enumerate(idx_matches):
         idx = m.group(1)
-        win_m = _LAYER_WINDOW.search(table, m.end())
+        block_end = idx_matches[i + 1].start() if i + 1 < len(idx_matches) else len(table)
+        block = table[m.end():block_end]
+        win_m = _LAYER_WINDOW.search(block)
         if win_m:
             windows[idx] = int(win_m.group(1))
     if not windows:

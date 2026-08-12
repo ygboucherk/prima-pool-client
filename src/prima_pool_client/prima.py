@@ -46,22 +46,29 @@ class StdoutCapture:
         self._lines: list[str] = []
         self._proc = proc
         self._stop = threading.Event()
+        self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._read, daemon=True)
         self._thread.start()
 
     def _read(self) -> None:
         assert self._proc.stdout is not None
-        for raw in iter(self._proc.stdout.readline, b""):
-            if self._stop.is_set():
-                break
-            line = raw.decode(errors="replace").rstrip("\n")
-            self._lines.append(line)
-            if len(self._lines) > self.MAX_LINES:
-                del self._lines[: len(self._lines) - self.MAX_LINES]
+        try:
+            for raw in iter(self._proc.stdout.readline, b""):
+                if self._stop.is_set():
+                    break
+                line = raw.decode(errors="replace").rstrip("\n")
+                with self._lock:
+                    self._lines.append(line)
+                    if len(self._lines) > self.MAX_LINES:
+                        del self._lines[: len(self._lines) - self.MAX_LINES]
+        except (ValueError, OSError):
+            # stdout was closed (stop() called) — normal teardown.
+            pass
 
     def text(self) -> str:
         """Return the captured output as a single string (lines joined)."""
-        return "\n".join(self._lines)
+        with self._lock:
+            return "\n".join(self._lines)
 
     def stop(self) -> None:
         self._stop.set()

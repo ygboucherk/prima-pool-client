@@ -59,6 +59,10 @@ class ClientConfig:
     api_port: int = 8080
     batch_flags: str = ""
     extra_flags: str = ""
+    # Max seconds to wait for prima.cpp to print its readiness marker ("model
+    # loaded") before reporting ready with an unknown distribution. Generous
+    # default to accommodate large model loads (30-70B GGUFs can take minutes).
+    prima_ready_timeout_s: float = 600.0
     # Heartbeat / WS
     heartbeat_interval_s: float = 10.0
     ws_reconnect_backoff_s: list[int] = field(default_factory=lambda: [1, 30])
@@ -94,6 +98,7 @@ class ClientConfig:
         cfg.api_port = _env_int("PRIMA_POOL_API_PORT", cfg.api_port)
         cfg.batch_flags = _env_str("PRIMA_POOL_BATCH_FLAGS", cfg.batch_flags)
         cfg.extra_flags = _env_str("PRIMA_POOL_EXTRA_FLAGS", cfg.extra_flags)
+        cfg.prima_ready_timeout_s = float(_env_str("PRIMA_POOL_PRIMA_READY_TIMEOUT_S", str(cfg.prima_ready_timeout_s)))
         cfg.wg_conf_dir = _env_str("PRIMA_POOL_WG_CONF_DIR", cfg.wg_conf_dir)
         cfg.state_path = _env_str("PRIMA_POOL_STATE_PATH", cfg.state_path)
         return cfg

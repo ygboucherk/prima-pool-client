@@ -326,7 +326,7 @@ class Agent:
         # Wait for the readiness marker: "model loaded" (llama-server prints
         # it once SERVER_STATE_READY is reached). Workers never run this task.
         marker = "model loaded"
-        deadline = time.time() + (self.config.heartbeat_interval_s * 6) + 30.0
+        deadline = time.time() + self.config.prima_ready_timeout_s
         while not self._stop.is_set():
             if marker in self.prima.captured_stdout():
                 break
