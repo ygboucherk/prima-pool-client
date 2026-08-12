@@ -93,8 +93,11 @@ class PoolClient:
         data = self._request("GET", f"/v1/clusters/{cluster_id}/config")
         return ClusterConfig(**data)
 
-    def report_ready(self, cluster_id: str) -> ClusterStatusResponse:
-        data = self._request("POST", f"/v1/clusters/{cluster_id}/ready", json={})
+    def report_ready(self, cluster_id: str, layer_windows: dict[str, int] | None = None) -> ClusterStatusResponse:
+        body: dict[str, Any] = {}
+        if layer_windows is not None:
+            body["layer_windows"] = layer_windows
+        data = self._request("POST", f"/v1/clusters/{cluster_id}/ready", json=body)
         return ClusterStatusResponse(**data)
 
     def close(self) -> None:

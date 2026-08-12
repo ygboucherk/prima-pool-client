@@ -22,12 +22,55 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from .config import ClientConfig
 from .models import ClusterConfig
 
 logger = logging.getLogger(__name__)
+
+
+class StdoutCapture:
+    """Line-buffered stdout capture for a subprocess.
+
+    Reads the child's stdout on a background thread into a bounded deque so
+    the agent can parse the Halda allocation table + readiness markers even
+    after the process has been running for a while. Bounded to avoid unbounded
+    memory growth for long-running servers (llama-server prints request logs).
+    """
+
+    MAX_LINES = 200_000
+
+    def __init__(self, proc: subprocess.Popen) -> None:
+        self._lines: list[str] = []
+        self._proc = proc
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._read, daemon=True)
+        self._thread.start()
+
+    def _read(self) -> None:
+        assert self._proc.stdout is not None
+        for raw in iter(self._proc.stdout.readline, b""):
+            if self._stop.is_set():
+                break
+            line = raw.decode(errors="replace").rstrip("\n")
+            self._lines.append(line)
+            if len(self._lines) > self.MAX_LINES:
+                del self._lines[: len(self._lines) - self.MAX_LINES]
+
+    def text(self) -> str:
+        """Return the captured output as a single string (lines joined)."""
+        return "\n".join(self._lines)
+
+    def stop(self) -> None:
+        self._stop.set()
+        # Closing stdout unblocks the readline loop; the child keeps running.
+        if self._proc.stdout:
+            try:
+                self._proc.stdout.close()
+            except OSError:
+                pass
 
 
 def compute_gguf_sha256(path: str, chunk_size: int = 1 << 20) -> str:
@@ -108,12 +151,20 @@ class PrimaLauncher:
     def __init__(self, config: ClientConfig) -> None:
         self.config = config
         self._proc: subprocess.Popen | None = None
+        self._capture: StdoutCapture | None = None
 
     def _resolve_model_path(self) -> str:
         """Resolve the absolute GGUF path for the current mode."""
         if self.config.model_path:
             return self.config.model_path
         return str(Path(self.config.prima_dir).expanduser() / "models" / self.config.model_file)
+
+    def captured_stdout(self) -> str:
+        """The head's stdout captured so far (used for Halda parsing).
+
+        Returns "" in docker mode (the child's output is not piped).
+        """
+        return self._capture.text() if self._capture else ""
 
     def launch(self, cluster: ClusterConfig, ring_position: int) -> subprocess.Popen | None:
         world = len(_ring_members(cluster))
@@ -171,7 +222,8 @@ class PrimaLauncher:
         if self.config.extra_flags:
             cmd += self.config.extra_flags.split()
         logger.info("launching prima.cpp in-container: %s", " ".join(cmd))
-        self._proc = subprocess.Popen(cmd)
+        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self._capture = StdoutCapture(self._proc)
         return self._proc
 
     def stop(self) -> None:
@@ -191,5 +243,8 @@ class PrimaLauncher:
                     self._proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     self._proc.kill()
+            if self._capture:
+                self._capture.stop()
+                self._capture = None
             subprocess.run(["pkill", "-f", "llama-server"], capture_output=True, text=True)
             subprocess.run(["pkill", "-f", "llama-cli"], capture_output=True, text=True)

@@ -56,6 +56,7 @@ class Agent:
         self._ws: WsClient | None = None
         self._prima_proc = None
         self._relay_task: asyncio.Task | None = None
+        self._stdout_task: asyncio.Task | None = None
         self._cluster_config: ClusterConfig | None = None
 
     # ── persistence ──────────────────────────────────────────────────────
@@ -279,12 +280,92 @@ class Agent:
             self.state.status = "waitlisted"
             self._save_state()
             return
-        # Report readiness
+
+        if ring_position == 0:
+            # Head: watch stdout for the Halda allocation + "model loaded"
+            # readiness line, then report the layer distribution over WS and
+            # report ready. The cluster only goes live once the distribution
+            # has been reported (server-side invariant).
+            if self._stdout_task is None or self._stdout_task.done():
+                self._stdout_task = asyncio.create_task(
+                    self._head_stdout_monitor(config, cluster_id)
+                )
+        else:
+            # Worker: report ready immediately (no distribution needed).
+            await self._report_ready(cluster_id)
+
+    async def _report_ready(self, cluster_id: str, layer_windows: dict[str, int] | None = None) -> None:
         try:
-            status = self.client.report_ready(cluster_id)
+            status = self.client.report_ready(cluster_id, layer_windows=layer_windows)
             logger.info("readiness reported: %s (%d/%d)", status.status, status.members_ready, status.members_total)
         except Exception as exc:  # noqa: BLE001
             logger.error("readiness report failed: %s", exc)
+
+    async def _head_stdout_monitor(self, config: ClusterConfig, cluster_id: str) -> None:
+        """Head-only task: wait for prima.cpp to print its readiness marker
+        ("model loaded" for llama-server), parse the Halda layer distribution
+        from the captured stdout, send it over WS, then report ready.
+
+        The parse is best-effort: on failure we still send an explicit
+        "unknown" distribution ({}) so the cluster can go live with the field
+        recorded as unknown (liveness must never be blocked by a log parse).
+        """
+        from .halda import build_distribution
+
+        # In docker mode there is no stdout capture, so we cannot wait for the
+        # "model loaded" marker or parse Halda. Report ready immediately with
+        # an explicit "unknown" distribution so the cluster can still go live.
+        if self.config.prima_mode == "docker":
+            logger.warning(
+                "docker mode: cannot parse layer distribution; reporting unknown for cluster %s",
+                cluster_id,
+            )
+            await self._send_distribution_and_ready(cluster_id, {})
+            return
+
+        # Wait for the readiness marker: "model loaded" (llama-server prints
+        # it once SERVER_STATE_READY is reached). Workers never run this task.
+        marker = "model loaded"
+        deadline = time.time() + (self.config.heartbeat_interval_s * 6) + 30.0
+        while not self._stop.is_set():
+            if marker in self.prima.captured_stdout():
+                break
+            if time.time() > deadline:
+                logger.warning("timed out waiting for prima.cpp readiness marker")
+                break
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass
+
+        stdout = self.prima.captured_stdout()
+        distribution = build_distribution(stdout)
+        if distribution is None:
+            # Explicit unknown (empty dict) so the cluster can still go live.
+            logger.warning(
+                "could not parse layer distribution from prima.cpp output; "
+                "reporting unknown for cluster %s",
+                cluster_id,
+            )
+            distribution = {}
+        await self._send_distribution_and_ready(cluster_id, distribution)
+
+    async def _send_distribution_and_ready(self, cluster_id: str, distribution: dict[str, int]) -> None:
+        """Send the layer distribution over WS, then report ready (carrying the
+        same distribution as a REST fallback if the WS frame is lost)."""
+        if self._ws is not None:
+            await self._ws.send_frame(
+                {
+                    "type": "layer_distribution",
+                    "cluster_id": cluster_id,
+                    "layer_windows": distribution,
+                }
+            )
+            logger.info("sent layer distribution for cluster %s: %s", cluster_id, distribution)
+        else:
+            logger.warning("WS not available; layer distribution for %s not sent", cluster_id)
+
+        await self._report_ready(cluster_id, layer_windows=distribution)
 
     def _find_ring_position(self, config: ClusterConfig) -> int:
         """Find our index in the ring by matching our assigned IP to a peer.
@@ -365,6 +446,9 @@ class Agent:
         if self._relay_task:
             self._relay_task.cancel()
             self._relay_task = None
+        if self._stdout_task:
+            self._stdout_task.cancel()
+            self._stdout_task = None
         self._cluster_config = None
         self.wg.down()
         if self._prima_proc:
@@ -415,6 +499,9 @@ class Agent:
         if self._relay_task:
             self._relay_task.cancel()
             self._relay_task = None
+        if self._stdout_task:
+            self._stdout_task.cancel()
+            self._stdout_task = None
         # Tear down the tunnel and prima.cpp, but do NOT revoke the worker —
         # revocation is a permanent delete. On restart the agent reconnects with
         # the same worker_id (liveness is transient; the worker re-adds on the
