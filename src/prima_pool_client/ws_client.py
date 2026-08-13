@@ -31,6 +31,7 @@ class WsClient:
         self.on_frame = on_frame
         self.backoff = backoff or [1, 30]
         self._stop = asyncio.Event()
+        self._ws: websockets.ClientConnection | None = None
 
     async def run(self) -> None:
         attempt = 0
@@ -39,6 +40,7 @@ class WsClient:
                 async with websockets.connect(self.url, additional_headers={"Authorization": f"Bearer {self.api_key}"}) as ws:
                     logger.info("WS connected: %s", self.url)
                     attempt = 0
+                    self._ws = ws
                     async for raw in ws:
                         try:
                             frame = json.loads(raw)
@@ -51,6 +53,8 @@ class WsClient:
                             logger.error("WS frame handler error: %s", exc)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("WS error: %s", exc)
+            finally:
+                self._ws = None
             if self._stop.is_set():
                 break
             delay = self.backoff[min(attempt, len(self.backoff) - 1)]
@@ -60,6 +64,19 @@ class WsClient:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
             except asyncio.TimeoutError:
                 pass
+
+    async def send_frame(self, frame: dict) -> bool:
+        """Send a frame to the server if connected. Returns True if sent."""
+        ws = self._ws
+        if ws is None:
+            logger.warning("WS not connected; dropping frame %s", frame.get("type"))
+            return False
+        try:
+            await ws.send(json.dumps(frame))
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("WS send failed: %s", exc)
+            return False
 
     def stop(self) -> None:
         self._stop.set()

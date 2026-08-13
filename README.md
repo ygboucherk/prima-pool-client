@@ -36,6 +36,11 @@ generates them dynamically from the cluster assignment.
 - **prima.cpp** — launches the ring node in the **same container** with the
   correct RANK/WORLD/MASTER_IP/NEXT_IP from the cluster config
 - **Readiness** — reports `POST /clusters/{id}/ready` after WG + prima.cpp are up
+- **Layer distribution** — the HEAD parses prima.cpp's Halda allocation
+  (per-worker layer windows) from its stdout and reports it over WS + in the
+  ready body; the cluster only goes live once it's received. Parse failures
+  report "unknown" so they never block liveness. Wait timeout is tunable via
+  `PRIMA_POOL_PRIMA_READY_TIMEOUT_S` (default 600 s).
 
 > **Server peer:** when the pool server joins the cluster WG network (option A),
 > it appears in the cluster config as a peer with `role: "server"`. The client
@@ -109,6 +114,7 @@ via `--config`). See `src/prima_pool_client/config.py` for defaults.
 | `PRIMA_POOL_API_PORT` | `8080` | prima.cpp server port (head only) |
 | `PRIMA_POOL_BATCH_FLAGS` | — | e.g. `-np 4 --cont-batching` |
 | `PRIMA_POOL_EXTRA_FLAGS` | — | Extra prima.cpp flags |
+| `PRIMA_POOL_PRIMA_READY_TIMEOUT_S` | `600` | Max seconds the head waits for prima.cpp's "model loaded" before reporting an unknown layer distribution |
 | `PRIMA_POOL_STATE_PATH` | `~/.local/state/...` | Agent state persistence |
 
 ## Tests
