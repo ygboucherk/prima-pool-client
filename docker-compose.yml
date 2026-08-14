@@ -65,7 +65,11 @@ services:
       # Max seconds the head waits for prima.cpp's "model loaded" marker before
       # reporting an unknown layer distribution.
       PRIMA_POOL_PRIMA_READY_TIMEOUT_S: ${PRIMA_POOL_PRIMA_READY_TIMEOUT_S:-600}
-      PRIMA_POOL_STATE_PATH: ${PRIMA_POOL_STATE_PATH:-/data/client-state.json}
+      # Fixed to /data so state always lives on the named volume. NOT
+      # forwarded from .env: .env.example's PRIMA_POOL_STATE_PATH default is a
+      # bare-metal path (~/.local/state/...) for the no-Docker guide, which
+      # would land outside the volume and break persistence under compose.
+      PRIMA_POOL_STATE_PATH: /data/client-state.json
     # Publish the WG listen port so inbound handshakes from OTHER machines can
     # reach this container. Without this, the container's 51820 is only visible
     # inside the Docker network — an external peer would see nothing listening
