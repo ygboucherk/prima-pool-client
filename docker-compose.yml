@@ -48,9 +48,12 @@ services:
       PRIMA_POOL_WG_INTERFACE: ${PRIMA_POOL_WG_INTERFACE:-prima-pool}
       PRIMA_POOL_WG_ENDPOINT_HOST: ${PRIMA_POOL_WG_ENDPOINT_HOST:-}
       PRIMA_POOL_WG_RELAY_CHECK_S: ${PRIMA_POOL_WG_RELAY_CHECK_S:-10}
-      PRIMA_POOL_WG_CONF_DIR: /etc/wireguard
+      PRIMA_POOL_WG_CONF_DIR: ${PRIMA_POOL_WG_CONF_DIR:-/etc/wireguard}
       # same-container: exec prima.cpp in this container (default).
       PRIMA_POOL_PRIMA_MODE: ${PRIMA_POOL_PRIMA_MODE:-same-container}
+      # Legacy docker mode only: prima-docker project dir + GGUF filename.
+      PRIMA_POOL_PRIMA_DIR: ${PRIMA_POOL_PRIMA_DIR:-~/prima}
+      PRIMA_POOL_MODEL_FILE: ${PRIMA_POOL_MODEL_FILE:-model.gguf}
       # Absolute path to the GGUF model inside the container.
       PRIMA_POOL_MODEL_PATH: ${PRIMA_POOL_MODEL_PATH:-/models/model.gguf}
       PRIMA_POOL_MEM_LIMIT: ${PRIMA_POOL_MEM_LIMIT:-8g}
@@ -59,7 +62,10 @@ services:
       PRIMA_POOL_API_PORT: ${PRIMA_POOL_API_PORT:-8080}
       PRIMA_POOL_BATCH_FLAGS: ${PRIMA_POOL_BATCH_FLAGS:-}
       PRIMA_POOL_EXTRA_FLAGS: ${PRIMA_POOL_EXTRA_FLAGS:-}
-      PRIMA_POOL_STATE_PATH: /data/client-state.json
+      # Max seconds the head waits for prima.cpp's "model loaded" marker before
+      # reporting an unknown layer distribution.
+      PRIMA_POOL_PRIMA_READY_TIMEOUT_S: ${PRIMA_POOL_PRIMA_READY_TIMEOUT_S:-600}
+      PRIMA_POOL_STATE_PATH: ${PRIMA_POOL_STATE_PATH:-/data/client-state.json}
     # Publish the WG listen port so inbound handshakes from OTHER machines can
     # reach this container. Without this, the container's 51820 is only visible
     # inside the Docker network — an external peer would see nothing listening
