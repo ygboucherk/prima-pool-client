@@ -107,7 +107,7 @@ via `--config`). See `src/prima_pool_client/config.py` for defaults.
 | `PRIMA_POOL_PRIMA_MODE` | `same-container` | `same-container` (exec in this container) or `docker` (compose) |
 | `PRIMA_POOL_PRIMA_DIR` | `~/prima` | prima-docker project dir (docker mode only) |
 | `PRIMA_POOL_MODEL_FILE` | `model.gguf` | GGUF filename (used by `PRIMA_POOL_MODEL_PATH` fallback + docker mode) |
-| `PRIMA_POOL_MODEL_PATH` | `/models/model.gguf` | Absolute GGUF path inside the container |
+| `PRIMA_POOL_MODEL_PATH` | (empty) | Absolute GGUF path inside the container (empty → `~/prima/models/<model_file>`; Docker default `/models/model.gguf`) |
 | `PRIMA_POOL_MEM_LIMIT` | `8g` | Memory limit for prima.cpp (≥ model size + 2 GB) |
 | `PRIMA_POOL_GPU_MEM_FLAG` | — | e.g. `--gpu-mem 8` |
 | `PRIMA_POOL_CTX_SIZE` | `4096` | Context window |
@@ -131,6 +131,7 @@ src/prima_pool_client/
 ├── agent.py        # Worker lifecycle control loop
 ├── cli.py          # bootstrap / run / genkey commands
 ├── config.py       # ClientConfig
+├── halda.py        # Halda layer-distribution parser (head only)
 ├── models.py       # Response schemas
 ├── prima.py        # prima.cpp launcher (docker/native)
 ├── rest.py         # Typed REST client
