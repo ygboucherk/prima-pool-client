@@ -42,9 +42,10 @@ class StdoutCapture:
 
     MAX_LINES = 200_000
 
-    def __init__(self, proc: subprocess.Popen) -> None:
+    def __init__(self, proc: subprocess.Popen, mirror: bool = True) -> None:
         self._lines: list[str] = []
         self._proc = proc
+        self._mirror = mirror
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._read, daemon=True)
@@ -57,6 +58,11 @@ class StdoutCapture:
                 if self._stop.is_set():
                     break
                 line = raw.decode(errors="replace").rstrip("\n")
+                # Mirror the child's output to our own stdout so an operator
+                # sees it live, exactly as if it weren't captured. The line is
+                # still buffered below for Halda/readiness parsing.
+                if self._mirror:
+                    print(line, flush=True)
                 with self._lock:
                     self._lines.append(line)
                     if len(self._lines) > self.MAX_LINES:
